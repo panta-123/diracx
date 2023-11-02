@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Any, Optional
 
 from pydantic import BaseModel as _BaseModel
-from pydantic import EmailStr, PrivateAttr, root_validator
+from pydantic import EmailStr, Field, PrivateAttr, root_validator
 
 from ..properties import SecurityProperty
 
@@ -49,7 +49,7 @@ class GroupConfig(BaseModel):
     AutoAddVOMS: bool = False
     AutoUploadPilotProxy: bool = False
     AutoUploadProxy: bool = False
-    JobShare: Optional[int]
+    JobShare: int = 1000
     Properties: set[SecurityProperty]
     Quota: Optional[int]
     Users: set[str]
@@ -67,8 +67,15 @@ class IdpConfig(BaseModel):
         return f"{self.URL}/.well-known/openid-configuration"
 
 
+class SupportInfo(BaseModel):
+    Email: str | None = None
+    Webpage: str | None = None
+    Message: str = "Please contact system administrator"
+
+
 class RegistryConfig(BaseModel):
     IdP: IdpConfig
+    Support: SupportInfo = Field(default_factory=SupportInfo)
     DefaultGroup: str
     DefaultStorageQuota: float = 0
     DefaultProxyLifeTime: int = 12 * 60 * 60
@@ -96,9 +103,14 @@ class JobMonitoringConfig(BaseModel):
     useESForJobParametersFlag: bool = False
 
 
+class JobSchedulingConfig(BaseModel):
+    EnableSharesCorrection: bool = False
+
+
 class ServicesConfig(BaseModel):
     Catalogs: dict[str, Any] | None
     JobMonitoring: JobMonitoringConfig = JobMonitoringConfig()
+    JobScheduling: JobSchedulingConfig = JobSchedulingConfig()
 
 
 class OperationsConfig(BaseModel):

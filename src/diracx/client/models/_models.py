@@ -101,6 +101,32 @@ class BodyAuthTokenGrantType(_serialization.Model):
         super().__init__(**kwargs)
 
 
+class GroupInfo(_serialization.Model):
+    """GroupInfo.
+
+    All required parameters must be populated in order to send to Azure.
+
+    :ivar properties: Properties. Required.
+    :vartype properties: list[str]
+    """
+
+    _validation = {
+        "properties": {"required": True},
+    }
+
+    _attribute_map = {
+        "properties": {"key": "properties", "type": "[str]"},
+    }
+
+    def __init__(self, *, properties: List[str], **kwargs: Any) -> None:
+        """
+        :keyword properties: Properties. Required.
+        :paramtype properties: list[str]
+        """
+        super().__init__(**kwargs)
+        self.properties = properties
+
+
 class HTTPValidationError(_serialization.Model):
     """HTTPValidationError.
 
@@ -253,12 +279,15 @@ class JobSearchParams(_serialization.Model):
     :vartype search: list[~client.models.JobSearchParamsSearchItem]
     :ivar sort: Sort.
     :vartype sort: list[~client.models.SortSpec]
+    :ivar distinct: Distinct.
+    :vartype distinct: bool
     """
 
     _attribute_map = {
         "parameters": {"key": "parameters", "type": "[str]"},
         "search": {"key": "search", "type": "[JobSearchParamsSearchItem]"},
         "sort": {"key": "sort", "type": "[SortSpec]"},
+        "distinct": {"key": "distinct", "type": "bool"},
     }
 
     def __init__(
@@ -267,6 +296,7 @@ class JobSearchParams(_serialization.Model):
         parameters: Optional[List[str]] = None,
         search: List["_models.JobSearchParamsSearchItem"] = [],
         sort: List["_models.SortSpec"] = [],
+        distinct: bool = False,
         **kwargs: Any
     ) -> None:
         """
@@ -276,11 +306,14 @@ class JobSearchParams(_serialization.Model):
         :paramtype search: list[~client.models.JobSearchParamsSearchItem]
         :keyword sort: Sort.
         :paramtype sort: list[~client.models.SortSpec]
+        :keyword distinct: Distinct.
+        :paramtype distinct: bool
         """
         super().__init__(**kwargs)
         self.parameters = parameters
         self.search = search
         self.sort = sort
+        self.distinct = distinct
 
 
 class JobSearchParamsSearchItem(_serialization.Model):
@@ -509,6 +542,34 @@ class LimitedJobStatusReturn(_serialization.Model):
         self.application_status = application_status
 
 
+class Metadata(_serialization.Model):
+    """Metadata.
+
+    All required parameters must be populated in order to send to Azure.
+
+    :ivar virtual_organizations: Virtual Organizations. Required.
+    :vartype virtual_organizations: dict[str, ~client.models.VOInfo]
+    """
+
+    _validation = {
+        "virtual_organizations": {"required": True},
+    }
+
+    _attribute_map = {
+        "virtual_organizations": {"key": "virtual_organizations", "type": "{VOInfo}"},
+    }
+
+    def __init__(
+        self, *, virtual_organizations: Dict[str, "_models.VOInfo"], **kwargs: Any
+    ) -> None:
+        """
+        :keyword virtual_organizations: Virtual Organizations. Required.
+        :paramtype virtual_organizations: dict[str, ~client.models.VOInfo]
+        """
+        super().__init__(**kwargs)
+        self.virtual_organizations = virtual_organizations
+
+
 class SandboxDownloadResponse(_serialization.Model):
     """SandboxDownloadResponse.
 
@@ -653,7 +714,7 @@ class ScalarSearchSpec(_serialization.Model):
      "like".
     :vartype operator: str or ~client.models.ScalarSearchOperator
     :ivar value: Value. Required.
-    :vartype value: str
+    :vartype value: ~client.models.ScalarSearchSpecValue
     """
 
     _validation = {
@@ -665,7 +726,7 @@ class ScalarSearchSpec(_serialization.Model):
     _attribute_map = {
         "parameter": {"key": "parameter", "type": "str"},
         "operator": {"key": "operator", "type": "str"},
-        "value": {"key": "value", "type": "str"},
+        "value": {"key": "value", "type": "ScalarSearchSpecValue"},
     }
 
     def __init__(
@@ -673,7 +734,7 @@ class ScalarSearchSpec(_serialization.Model):
         *,
         parameter: str,
         operator: Union[str, "_models.ScalarSearchOperator"],
-        value: str,
+        value: "_models.ScalarSearchSpecValue",
         **kwargs: Any
     ) -> None:
         """
@@ -683,12 +744,22 @@ class ScalarSearchSpec(_serialization.Model):
          "like".
         :paramtype operator: str or ~client.models.ScalarSearchOperator
         :keyword value: Value. Required.
-        :paramtype value: str
+        :paramtype value: ~client.models.ScalarSearchSpecValue
         """
         super().__init__(**kwargs)
         self.parameter = parameter
         self.operator = operator
         self.value = value
+
+
+class ScalarSearchSpecValue(_serialization.Model):
+    """Value."""
+
+    _attribute_map = {}
+
+    def __init__(self, **kwargs: Any) -> None:
+        """ """
+        super().__init__(**kwargs)
 
 
 class SetJobStatusReturn(_serialization.Model):
@@ -805,6 +876,48 @@ class SortSpecDirection(_serialization.Model):
     def __init__(self, **kwargs: Any) -> None:
         """ """
         super().__init__(**kwargs)
+
+
+class SupportInfo(_serialization.Model):
+    """SupportInfo.
+
+    All required parameters must be populated in order to send to Azure.
+
+    :ivar message: Message. Required.
+    :vartype message: str
+    :ivar webpage: Webpage. Required.
+    :vartype webpage: str
+    :ivar email: Email. Required.
+    :vartype email: str
+    """
+
+    _validation = {
+        "message": {"required": True},
+        "webpage": {"required": True},
+        "email": {"required": True},
+    }
+
+    _attribute_map = {
+        "message": {"key": "message", "type": "str"},
+        "webpage": {"key": "webpage", "type": "str"},
+        "email": {"key": "email", "type": "str"},
+    }
+
+    def __init__(
+        self, *, message: str, webpage: str, email: str, **kwargs: Any
+    ) -> None:
+        """
+        :keyword message: Message. Required.
+        :paramtype message: str
+        :keyword webpage: Webpage. Required.
+        :paramtype webpage: str
+        :keyword email: Email. Required.
+        :paramtype email: str
+        """
+        super().__init__(**kwargs)
+        self.message = message
+        self.webpage = webpage
+        self.email = email
 
 
 class TokenResponse(_serialization.Model):
@@ -990,7 +1103,7 @@ class VectorSearchSpec(_serialization.Model):
     :ivar operator: An enumeration. Required. Known values are: "in" and "not in".
     :vartype operator: str or ~client.models.VectorSearchOperator
     :ivar values: Values. Required.
-    :vartype values: list[str]
+    :vartype values: ~client.models.VectorSearchSpecValues
     """
 
     _validation = {
@@ -1002,7 +1115,7 @@ class VectorSearchSpec(_serialization.Model):
     _attribute_map = {
         "parameter": {"key": "parameter", "type": "str"},
         "operator": {"key": "operator", "type": "str"},
-        "values": {"key": "values", "type": "[str]"},
+        "values": {"key": "values", "type": "VectorSearchSpecValues"},
     }
 
     def __init__(
@@ -1010,7 +1123,7 @@ class VectorSearchSpec(_serialization.Model):
         *,
         parameter: str,
         operator: Union[str, "_models.VectorSearchOperator"],
-        values: List[str],
+        values: "_models.VectorSearchSpecValues",
         **kwargs: Any
     ) -> None:
         """
@@ -1019,9 +1132,66 @@ class VectorSearchSpec(_serialization.Model):
         :keyword operator: An enumeration. Required. Known values are: "in" and "not in".
         :paramtype operator: str or ~client.models.VectorSearchOperator
         :keyword values: Values. Required.
-        :paramtype values: list[str]
+        :paramtype values: ~client.models.VectorSearchSpecValues
         """
         super().__init__(**kwargs)
         self.parameter = parameter
         self.operator = operator
         self.values = values
+
+
+class VectorSearchSpecValues(_serialization.Model):
+    """Values."""
+
+    _attribute_map = {}
+
+    def __init__(self, **kwargs: Any) -> None:
+        """ """
+        super().__init__(**kwargs)
+
+
+class VOInfo(_serialization.Model):
+    """VOInfo.
+
+    All required parameters must be populated in order to send to Azure.
+
+    :ivar groups: Groups. Required.
+    :vartype groups: dict[str, ~client.models.GroupInfo]
+    :ivar support: SupportInfo. Required.
+    :vartype support: ~client.models.SupportInfo
+    :ivar default_group: Default Group. Required.
+    :vartype default_group: str
+    """
+
+    _validation = {
+        "groups": {"required": True},
+        "support": {"required": True},
+        "default_group": {"required": True},
+    }
+
+    _attribute_map = {
+        "groups": {"key": "groups", "type": "{GroupInfo}"},
+        "support": {"key": "support", "type": "SupportInfo"},
+        "default_group": {"key": "default_group", "type": "str"},
+    }
+
+    def __init__(
+        self,
+        *,
+        groups: Dict[str, "_models.GroupInfo"],
+        support: "_models.SupportInfo",
+        default_group: str,
+        **kwargs: Any
+    ) -> None:
+        """
+        :keyword groups: Groups. Required.
+        :paramtype groups: dict[str, ~client.models.GroupInfo]
+        :keyword support: SupportInfo. Required.
+        :paramtype support: ~client.models.SupportInfo
+        :keyword default_group: Default Group. Required.
+        :paramtype default_group: str
+        """
+        super().__init__(**kwargs)
+        self.groups = groups
+        self.support = support
+        self.default_group = default_group

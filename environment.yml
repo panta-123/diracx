@@ -31,7 +31,7 @@ dependencies:
   - isodate
   - mypy
   - opensearch-py
-  - pydantic =1.10.10
+  - pydantic =1.10.13
   - pyjwt
   - pytest
   - pytest-asyncio
@@ -53,6 +53,7 @@ dependencies:
   - moto
   - aiobotocore
   - botocore
+  - pip
   - pip:
     - types-aiobotocore[essential]
     - boto3-stubs[essential]

@@ -6,11 +6,12 @@ from datetime import datetime, timezone
 from http import HTTPStatus
 from typing import Annotated, Any, TypedDict
 
-from fastapi import Body, Depends, HTTPException, Query
+from fastapi import BackgroundTasks, Body, Depends, HTTPException, Query
 from pydantic import BaseModel, root_validator
 from sqlalchemy.exc import NoResultFound
 
 from diracx.core.config import Config, ConfigSource
+from diracx.core.exceptions import JobNotFound
 from diracx.core.models import (
     JobStatus,
     JobStatusReturn,
@@ -23,11 +24,14 @@ from diracx.core.models import (
 )
 from diracx.core.properties import JOB_ADMINISTRATOR, NORMAL_USER
 from diracx.db.sql.jobs.status_utility import (
+    delete_jobs,
+    kill_jobs,
+    remove_jobs,
     set_job_status,
 )
 
 from ..auth import AuthorizedUserInfo, has_properties, verify_dirac_access_token
-from ..dependencies import JobDB, JobLoggingDB
+from ..dependencies import JobDB, JobLoggingDB, SandboxMetadataDB, TaskQueueDB
 from ..fastapi_classes import DiracxRouter
 from .sandboxes import router as sandboxes_router
 
@@ -53,6 +57,7 @@ class JobSearchParams(BaseModel):
     parameters: list[str] | None = None
     search: list[SearchSpec] = []
     sort: list[SortSpec] = []
+    distinct: bool = False
 
     @root_validator
     def validate_fields(cls, v):
@@ -235,14 +240,108 @@ async def submit_bulk_jobs(
 
 
 @router.delete("/")
-async def delete_bulk_jobs(job_ids: Annotated[list[int], Query()]):
+async def delete_bulk_jobs(
+    job_ids: Annotated[list[int], Query()],
+    config: Annotated[Config, Depends(ConfigSource.create)],
+    job_db: JobDB,
+    job_logging_db: JobLoggingDB,
+    task_queue_db: TaskQueueDB,
+    background_task: BackgroundTasks,
+):
+    # TODO: implement job policy
+
+    try:
+        await delete_jobs(
+            job_ids,
+            config,
+            job_db,
+            job_logging_db,
+            task_queue_db,
+            background_task,
+        )
+    except* JobNotFound as group_exc:
+        failed_job_ids: list[int] = list({e.job_id for e in group_exc.exceptions})  # type: ignore
+
+        raise HTTPException(
+            status_code=HTTPStatus.NOT_FOUND,
+            detail={
+                "message": f"Failed to delete {len(failed_job_ids)} jobs out of {len(job_ids)}",
+                "valid_job_ids": list(set(job_ids) - set(failed_job_ids)),
+                "failed_job_ids": failed_job_ids,
+            },
+        ) from group_exc
+
     return job_ids
 
 
 @router.post("/kill")
 async def kill_bulk_jobs(
     job_ids: Annotated[list[int], Query()],
+    config: Annotated[Config, Depends(ConfigSource.create)],
+    job_db: JobDB,
+    job_logging_db: JobLoggingDB,
+    task_queue_db: TaskQueueDB,
+    background_task: BackgroundTasks,
 ):
+    # TODO: implement job policy
+    try:
+        await kill_jobs(
+            job_ids,
+            config,
+            job_db,
+            job_logging_db,
+            task_queue_db,
+            background_task,
+        )
+    except* JobNotFound as group_exc:
+        failed_job_ids: list[int] = list({e.job_id for e in group_exc.exceptions})  # type: ignore
+
+        raise HTTPException(
+            status_code=HTTPStatus.NOT_FOUND,
+            detail={
+                "message": f"Failed to kill {len(failed_job_ids)} jobs out of {len(job_ids)}",
+                "valid_job_ids": list(set(job_ids) - set(failed_job_ids)),
+                "failed_job_ids": failed_job_ids,
+            },
+        ) from group_exc
+
+    return job_ids
+
+
+@router.post("/remove")
+async def remove_bulk_jobs(
+    job_ids: Annotated[list[int], Query()],
+    config: Annotated[Config, Depends(ConfigSource.create)],
+    job_db: JobDB,
+    job_logging_db: JobLoggingDB,
+    sandbox_metadata_db: SandboxMetadataDB,
+    task_queue_db: TaskQueueDB,
+    background_task: BackgroundTasks,
+):
+    """
+    Fully remove a list of jobs from the WMS databases.
+
+
+    WARNING: This endpoint has been implemented for the compatibility with the legacy DIRAC WMS
+    and the JobCleaningAgent. However, once this agent is ported to diracx, this endpoint should
+    be removed, and the delete endpoint should be used instead for any other purpose.
+    """
+    # TODO: Remove once legacy DIRAC no longer needs this
+
+    # TODO: implement job policy
+    # Some tests have already been written in the test_job_manager,
+    # but they need to be uncommented and are not complete
+
+    await remove_jobs(
+        job_ids,
+        config,
+        job_db,
+        job_logging_db,
+        sandbox_metadata_db,
+        task_queue_db,
+        background_task,
+    )
+
     return job_ids
 
 
@@ -255,7 +354,7 @@ async def get_job_status_bulk(
             *(job_db.get_job_status(job_id) for job_id in job_ids)
         )
         return {job_id: status for job_id, status in zip(job_ids, result)}
-    except NoResultFound as e:
+    except JobNotFound as e:
         raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=str(e)) from e
 
 
@@ -292,6 +391,70 @@ async def get_job_status_history_bulk(
         *(job_logging_db.get_records(job_id) for job_id in job_ids)
     )
     return {job_id: status for job_id, status in zip(job_ids, result)}
+
+
+@router.post("/reschedule")
+async def reschedule_bulk_jobs(
+    job_ids: Annotated[list[int], Query()],
+    job_db: JobDB,
+    job_logging_db: JobLoggingDB,
+    user_info: Annotated[AuthorizedUserInfo, Depends(verify_dirac_access_token)],
+):
+    rescheduled_jobs = []
+    # TODO: Joblist Policy:
+    # validJobList, invalidJobList, nonauthJobList, ownerJobList = self.jobPolicy.evaluateJobRights(
+    #        jobList, RIGHT_RESCHEDULE
+    #    )
+    # For the moment all jobs are valid:
+    valid_job_list = job_ids
+    for job_id in valid_job_list:
+        # TODO: delete job in TaskQueueDB
+        # self.taskQueueDB.deleteJob(jobID)
+        result = job_db.rescheduleJob(job_id)
+        try:
+            res_status = await job_db.get_job_status(job_id)
+        except NoResultFound as e:
+            raise HTTPException(
+                status_code=HTTPStatus.NOT_FOUND, detail=f"Job {job_id} not found"
+            ) from e
+
+        initial_status = res_status.status
+        initial_minor_status = res_status.minor_status
+
+        await job_logging_db.insert_record(
+            int(job_id),
+            initial_status,
+            initial_minor_status,
+            "Unknown",
+            datetime.now(timezone.utc),
+            "JobManager",
+        )
+        if result:
+            rescheduled_jobs.append(job_id)
+    # To uncomment when jobPolicy is setup:
+    # if invalid_job_list or non_auth_job_list:
+    #     logging.error("Some jobs failed to reschedule")
+    #     if invalid_job_list:
+    #         logging.info(f"Invalid jobs: {invalid_job_list}")
+    #     if non_auth_job_list:
+    #         logging.info(f"Non authorized jobs: {nonauthJobList}")
+
+    # TODO: send jobs to OtimizationMind
+    #  self.__sendJobsToOptimizationMind(validJobList)
+    return rescheduled_jobs
+
+
+@router.post("/{job_id}/reschedule")
+async def reschedule_single_job(
+    job_id: int,
+    job_db: JobDB,
+    user_info: Annotated[AuthorizedUserInfo, Depends(verify_dirac_access_token)],
+):
+    try:
+        result = await job_db.rescheduleJob(job_id)
+    except ValueError as e:
+        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=str(e)) from e
+    return result
 
 
 EXAMPLE_SEARCHES = {
@@ -379,7 +542,12 @@ async def search(
         )
     # TODO: Pagination
     return await job_db.search(
-        body.parameters, body.search, body.sort, page=page, per_page=per_page
+        body.parameters,
+        body.search,
+        body.sort,
+        distinct=body.distinct,
+        page=page,
+        per_page=per_page,
     )
 
 
@@ -408,13 +576,105 @@ async def get_single_job(job_id: int):
     return f"This job {job_id}"
 
 
+@router.delete("/{job_id}")
+async def delete_single_job(
+    job_id: int,
+    config: Annotated[Config, Depends(ConfigSource.create)],
+    job_db: JobDB,
+    job_logging_db: JobLoggingDB,
+    task_queue_db: TaskQueueDB,
+    background_task: BackgroundTasks,
+):
+    """
+    Delete a job by killing and setting the job status to DELETED.
+    """
+
+    # TODO: implement job policy
+    try:
+        await delete_jobs(
+            [job_id],
+            config,
+            job_db,
+            job_logging_db,
+            task_queue_db,
+            background_task,
+        )
+    except* JobNotFound as e:
+        raise HTTPException(
+            status_code=HTTPStatus.NOT_FOUND.value, detail=str(e.exceptions[0])
+        ) from e
+
+    return f"Job {job_id} has been successfully deleted"
+
+
+@router.post("/{job_id}/kill")
+async def kill_single_job(
+    job_id: int,
+    config: Annotated[Config, Depends(ConfigSource.create)],
+    job_db: JobDB,
+    job_logging_db: JobLoggingDB,
+    task_queue_db: TaskQueueDB,
+    background_task: BackgroundTasks,
+):
+    """
+    Kill a job.
+    """
+
+    # TODO: implement job policy
+
+    try:
+        await kill_jobs(
+            [job_id], config, job_db, job_logging_db, task_queue_db, background_task
+        )
+    except* JobNotFound as e:
+        raise HTTPException(
+            status_code=HTTPStatus.NOT_FOUND, detail=str(e.exceptions[0])
+        ) from e
+
+    return f"Job {job_id} has been successfully killed"
+
+
+@router.post("/{job_id}/remove")
+async def remove_single_job(
+    job_id: int,
+    config: Annotated[Config, Depends(ConfigSource.create)],
+    job_db: JobDB,
+    job_logging_db: JobLoggingDB,
+    sandbox_metadata_db: SandboxMetadataDB,
+    task_queue_db: TaskQueueDB,
+    background_task: BackgroundTasks,
+):
+    """
+    Fully remove a job from the WMS databases.
+
+    WARNING: This endpoint has been implemented for the compatibility with the legacy DIRAC WMS
+    and the JobCleaningAgent. However, once this agent is ported to diracx, this endpoint should
+    be removed, and the delete endpoint should be used instead.
+    """
+    # TODO: Remove once legacy DIRAC no longer needs this
+
+    # TODO: implement job policy
+
+    await remove_jobs(
+        [job_id],
+        config,
+        job_db,
+        job_logging_db,
+        sandbox_metadata_db,
+        task_queue_db,
+        background_task,
+    )
+
+    return f"Job {job_id} has been successfully removed"
+
+
 @router.get("/{job_id}/status")
 async def get_single_job_status(
     job_id: int, job_db: JobDB
 ) -> dict[int, LimitedJobStatusReturn]:
     try:
         status = await job_db.get_job_status(job_id)
-    except NoResultFound as e:
+    except JobNotFound as e:
         raise HTTPException(
             status_code=HTTPStatus.NOT_FOUND, detail=f"Job {job_id} not found"
         ) from e
@@ -441,7 +701,7 @@ async def set_single_job_status(
         latest_status = await set_job_status(
             job_id, status, job_db, job_logging_db, force
         )
-    except NoResultFound as e:
+    except JobNotFound as e:
         raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=str(e)) from e
     return {job_id: latest_status}
 
@@ -453,7 +713,7 @@ async def get_single_job_status_history(
 ) -> dict[int, list[JobStatusReturn]]:
     try:
         status = await job_logging_db.get_records(job_id)
-    except NoResultFound as e:
+    except JobNotFound as e:
         raise HTTPException(
             status_code=HTTPStatus.NOT_FOUND, detail="Job not found"
         ) from e

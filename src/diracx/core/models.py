@@ -29,13 +29,13 @@ class SortSpec(TypedDict):
 class ScalarSearchSpec(TypedDict):
     parameter: str
     operator: ScalarSearchOperator
-    value: str
+    value: str | int
 
 
 class VectorSearchSpec(TypedDict):
     parameter: str
     operator: VectorSearchOperator
-    values: list[str]
+    values: list[str] | list[int]
 
 
 SearchSpec = ScalarSearchSpec | VectorSearchSpec
@@ -65,6 +65,11 @@ class JobStatus(StrEnum):
     DELETED = "Deleted"
     KILLED = "Killed"
     RESCHEDULED = "Rescheduled"
+
+
+class JobMinorStatus(StrEnum):
+    MAX_RESCHEDULING = "Maximum of reschedulings reached"
+    RESCHEDULED = "Job Rescheduled"
 
 
 class JobStatusUpdate(BaseModel):
